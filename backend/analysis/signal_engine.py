@@ -190,6 +190,7 @@ def _validate(candles: list[dict]) -> list[str]:
         if errors:
             # stop after first bad candle to keep messages tidy
             break
+        # Only run OHLC consistency checks when all fields passed field-level validation
         o, h, l, c_ = (
             c.get("open", 0),
             c.get("high", 0),
@@ -288,7 +289,7 @@ def _determine_signal(
         raw_conf = 0.5
 
     # cap confidence at 0.85 – never claim certainty
-    confidence = round(min(raw_conf * 0.85 / 0.85, 0.85), 4)
+    confidence = round(min(raw_conf * 0.85, 0.85), 4)
 
     return signal, confidence, reasons
 

@@ -154,7 +154,6 @@ class TestRsi:
         assert result < 5.0
 
     def test_mid_range(self):
-        closes = [_make_candle(1, 1, 1, 1)["close"]]  # dummy start
         # alternate up/down
         prices = [100.0]
         for i in range(20):
