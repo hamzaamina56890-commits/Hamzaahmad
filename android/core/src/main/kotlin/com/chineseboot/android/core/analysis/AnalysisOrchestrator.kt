@@ -2,6 +2,7 @@ package com.chineseboot.android.core.analysis
 
 import com.chineseboot.android.core.model.AnalysisSnapshot
 import com.chineseboot.android.core.model.ChartDetectionState
+import com.chineseboot.android.core.model.RecognitionStatus
 import com.chineseboot.android.core.model.Signal
 import com.chineseboot.android.core.vision.CalibratedCandle
 import com.chineseboot.android.core.vision.CandleSeriesBuilder
@@ -38,6 +39,7 @@ object AnalysisOrchestrator {
                 reason = "WAIT \u2014 CANDLE DATA UNRELIABLE",
                 analysisWindow = recognition.candles.size,
                 timestampMillis = timestamp,
+                recognitionStatus = RecognitionStatus.CANDLES_NOT_DETECTED,
             )
 
             ChartRecognitionStatus.READY -> {
@@ -53,6 +55,7 @@ object AnalysisOrchestrator {
                         analysisWindow = recognition.candles.size,
                         timestampMillis = timestamp,
                         candleColorKnown = recognition.candleColorKnown,
+                        recognitionStatus = RecognitionStatus.CALIBRATION_FAILED,
                     )
                 } else {
                     val calibratedCandidates = recognition.candles.mapNotNull { pixel ->
@@ -66,7 +69,19 @@ object AnalysisOrchestrator {
                         asset = recognition.asset,
                         timeframeSeconds = timeframeSeconds,
                         timestampMillis = timestamp,
-                    )
+                    ).let { snapshot ->
+                        snapshot.copy(
+                            recognitionStatus = when (snapshot.signal) {
+                                Signal.UP, Signal.DOWN -> RecognitionStatus.SIGNAL_READY
+                                Signal.WAIT -> if (snapshot.analysisWindow < CalibratedSignalEngine.MIN_VERIFIED_CANDLES) {
+                                    RecognitionStatus.INSUFFICIENT_DATA
+                                } else {
+                                    RecognitionStatus.VERIFIED
+                                }
+                                null -> RecognitionStatus.VERIFIED
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -62,6 +62,17 @@ object PriceScaleCalibrator {
         val scale = sxy / sxx
         val offset = meanY - scale * meanX
 
+        // Price axes must have a real slope, and their labels must be strictly
+        // monotonic when read from top to bottom. This rejects duplicate OCR
+        // reads and axes whose values were assembled from unrelated UI text.
+        if (!scale.isFinite() || abs(scale) < 1e-12) return null
+        val ordered = distinctByPixelY.sortedBy { it.first }
+        val expectedDirection = if (scale < 0.0) -1 else 1
+        if (ordered.zipWithNext().any { (first, second) ->
+                val delta = second.second - first.second
+                delta == 0.0 || (if (delta > 0.0) 1 else -1) != expectedDirection
+            }) return null
+
         // Residual error: how far actual label prices deviate from the fitted line.
         val priceRange = (ys.maxOrNull() ?: 0.0) - (ys.minOrNull() ?: 0.0)
         if (priceRange <= 0.0) return null

@@ -20,15 +20,14 @@ data class ParsedPrice(val value: Double, val decimalPlaces: Int)
  * Never guesses: text that doesn't look like a plausible price returns `null`.
  */
 object PriceLabelParser {
-    private val NUMERIC_PATTERN = Regex("""-?\d[\d,]*(?:\.\d+)?""")
+    private val NUMERIC_PATTERN = Regex("""(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?""")
 
     fun parse(rawText: String): ParsedPrice? {
         val cleaned = rawText.trim()
         if (cleaned.isEmpty()) return null
 
-        val match = NUMERIC_PATTERN.find(cleaned) ?: return null
-        val numericText = match.value.replace(",", "")
-        if (numericText.isEmpty() || numericText == "-") return null
+        if (!NUMERIC_PATTERN.matches(cleaned)) return null
+        val numericText = cleaned.replace(",", "")
 
         val value = numericText.toDoubleOrNull() ?: return null
         // Reject obviously-invalid OCR reads (negative or zero-ish chart prices).

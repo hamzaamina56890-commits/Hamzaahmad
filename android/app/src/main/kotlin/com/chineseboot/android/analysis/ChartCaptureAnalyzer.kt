@@ -5,9 +5,9 @@ import com.chineseboot.android.core.model.AnalysisSnapshot
 import com.chineseboot.android.core.vision.ChartRecognitionEngine
 import com.chineseboot.android.core.vision.ChartRecognitionResult
 import com.chineseboot.android.core.vision.FrameBuffer
-import com.chineseboot.android.core.vision.NoOpPriceLabelDetector
 import com.chineseboot.android.core.vision.PixelRect
 import com.chineseboot.android.core.vision.PriceLabelDetector
+import com.chineseboot.android.analysis.ocr.PriceScaleOcrDetector
 
 /**
  * Runs the full recognition -> calibration -> analysis pipeline against a
@@ -20,18 +20,17 @@ import com.chineseboot.android.core.vision.PriceLabelDetector
  */
 class ChartCaptureAnalyzer(
     private val engine: ChartRecognitionEngine = ChartRecognitionEngine(),
-    private val priceLabelDetector: PriceLabelDetector = NoOpPriceLabelDetector,
+    private val priceLabelDetector: PriceLabelDetector = PriceScaleOcrDetector(),
 ) {
     data class Result(val recognition: ChartRecognitionResult, val snapshot: AnalysisSnapshot)
 
-    fun analyze(frame: FrameBuffer, excludeRegions: List<PixelRect>): Result {
+    suspend fun analyze(frame: FrameBuffer, excludeRegions: List<PixelRect>): Result {
         val recognition = engine.analyze(frame, excludeRegions)
         val region = recognition.region
 
-        val priceLabels = if (region != null) priceLabelDetector.detectPriceLabels(frame, region) else emptyList()
-        val timeframeLabel = region?.let { priceLabelDetector.detectTimeframeLabel(frame, it) }
+        val ocr = region?.let { priceLabelDetector.detect(frame, it) }
 
-        val snapshot = AnalysisOrchestrator.analyze(recognition, priceLabels, timeframeLabel)
+        val snapshot = AnalysisOrchestrator.analyze(recognition, ocr?.labels.orEmpty(), ocr?.timeframeLabel)
         return Result(recognition, snapshot)
     }
 }

@@ -31,6 +31,16 @@ enum class ChartDetectionState {
     SCANNING,
 }
 
+/** The most specific verified stage reached by the capture pipeline. */
+enum class RecognitionStatus {
+    SCANNING,
+    CALIBRATION_FAILED,
+    CANDLES_NOT_DETECTED,
+    INSUFFICIENT_DATA,
+    VERIFIED,
+    SIGNAL_READY,
+}
+
 /**
  * Snapshot of everything the floating overlay panel needs to render.
  * Any field that could not be reliably detected must be `null`, never guessed.
@@ -54,6 +64,7 @@ data class AnalysisSnapshot(
     val candleColorKnown: Boolean = false,
     /** Price-scale calibration quality (0.0-1.0), for diagnostic/debug display only. Null when unavailable. */
     val calibrationQuality: Double? = null,
+    val recognitionStatus: RecognitionStatus = RecognitionStatus.SCANNING,
 ) {
     companion object {
         fun notDetected(timestampMillis: Long): AnalysisSnapshot =

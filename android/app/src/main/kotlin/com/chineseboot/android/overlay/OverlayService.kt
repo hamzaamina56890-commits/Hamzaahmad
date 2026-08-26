@@ -166,6 +166,8 @@ class OverlayService : Service(), LifecycleOwner {
         detailText.text = buildString {
             append("Asset: ${snapshot.asset ?: getString(R.string.value_asset_unknown)}\n")
             append("Timeframe: ${snapshot.timeframeSeconds?.let { "${it}s" } ?: getString(R.string.value_timeframe_unknown)}\n")
+            append("Recognized price: ${snapshot.price?.let { "%.5f".format(it) } ?: "UNAVAILABLE"}\n")
+            append("Candle direction: ${snapshot.direction?.name ?: "UNAVAILABLE"}\n")
             append("Signal: $signalText\n")
             append("Confidence: ${snapshot.confidencePercent ?: 0}%\n")
             append("Trend: $trendText\n")
@@ -175,6 +177,8 @@ class OverlayService : Service(), LifecycleOwner {
             append("Reason: ${snapshot.reason ?: "-"}\n")
             append("Candle count: ${snapshot.analysisWindow}\n")
             append("Recognition: $recognitionQuality\n")
+            append("Calibration: ${snapshot.calibrationQuality?.let { "${(it * 100).toInt()}%" } ?: "UNAVAILABLE"}\n")
+            append("Pipeline: ${snapshot.recognitionStatus}\n")
             append("Timestamp: $timestampText")
         }
     }

@@ -35,6 +35,9 @@ class PriceLabelParserTest {
     fun `rejects non-numeric OCR garbage`() {
         assertNull(PriceLabelParser.parse("BUY"))
         assertNull(PriceLabelParser.parse("---"))
+        assertNull(PriceLabelParser.parse("BUY 1.2345"))
+        assertNull(PriceLabelParser.parse("1.2345 USD"))
+        assertNull(PriceLabelParser.parse("1,23.45"))
     }
 
     @Test

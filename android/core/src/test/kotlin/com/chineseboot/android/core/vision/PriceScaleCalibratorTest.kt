@@ -68,4 +68,14 @@ class PriceScaleCalibratorTest {
         )
         assertNull(PriceScaleCalibrator.calibrate(labels, 1L))
     }
+
+    @Test
+    fun `rejects non-monotonic labels despite a possible regression fit`() {
+        val labels = listOf(
+            label(10, "1.2010"),
+            label(50, "1.1990"),
+            label(90, "1.2000"),
+        )
+        assertNull(PriceScaleCalibrator.calibrate(labels, 1L))
+    }
 }
