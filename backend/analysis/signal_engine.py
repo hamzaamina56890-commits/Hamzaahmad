@@ -132,23 +132,50 @@ def _candle_strength(candles: list[dict]) -> str:
 
 
 def analyze(payload: dict) -> dict[str, Any]:
-    symbol: str = payload.get("symbol", "")
+    symbol: str = (payload.get("symbol") or "").strip()
     timeframe_seconds: int = int(payload.get("timeframe_seconds", 60))
 
-    interval = _INTERVAL_MAP.get(timeframe_seconds, "1min")
-    candles = _fetch_candles(symbol, interval)
-
-    if len(candles) < 20:
+    if not symbol:
         return {
             "symbol": symbol,
             "timeframe_seconds": timeframe_seconds,
             "signal": "NEUTRAL",
             "confidence": 0,
             "trend": "unknown",
-            "reasons": [
-                "Insufficient verified data. "
-                "Set the TWELVE_DATA_API_KEY environment variable to enable live analysis."
-            ],
+            "reasons": ["No symbol provided."],
+            "live": False,
+            "data_source": "none",
+            "price": None,
+            "candles": [],
+            "indicators": {},
+        }
+
+    interval = _INTERVAL_MAP.get(timeframe_seconds, "1min")
+    # Note if the requested sub-minute timeframe is coarser than requested
+    actual_seconds = {"1min": 60, "5min": 300}.get(interval, 60)
+    resolution_note = (
+        f"Note: requested timeframe ({timeframe_seconds}s) uses {interval} candles "
+        f"(Twelve Data minimum granularity is 1 minute)."
+        if actual_seconds > timeframe_seconds
+        else None
+    )
+
+    candles = _fetch_candles(symbol, interval)
+
+    if len(candles) < 20:
+        reasons = [
+            "Insufficient verified data. "
+            "Set the TWELVE_DATA_API_KEY environment variable to enable live analysis."
+        ]
+        if resolution_note:
+            reasons.append(resolution_note)
+        return {
+            "symbol": symbol,
+            "timeframe_seconds": timeframe_seconds,
+            "signal": "NEUTRAL",
+            "confidence": 0,
+            "trend": "unknown",
+            "reasons": reasons,
             "live": False,
             "data_source": "none",
             "price": None,
@@ -219,13 +246,16 @@ def analyze(payload: dict) -> dict[str, Any]:
     total = bullish + bearish
     if total == 0 or bullish == bearish:
         signal = "NEUTRAL"
-        confidence = 50 if total > 0 else 0
+        confidence = 0  # split or no signals — not directional
     elif bullish > bearish:
         signal = "UP"
         confidence = round((bullish / total) * 100)
     else:
         signal = "DOWN"
         confidence = round((bearish / total) * 100)
+
+    if resolution_note:
+        reasons.append(resolution_note)
 
     return {
         "symbol": symbol,

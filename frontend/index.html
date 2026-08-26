@@ -214,9 +214,17 @@
       }
     }
 
+    // Adaptive decimal places: more decimals for small prices (forex), fewer for large prices
+    function fmtPrice(p) {
+      if (p == null) return '\u2014';
+      if (p >= 1000) return p.toFixed(2);
+      if (p >= 10) return p.toFixed(3);
+      return p.toFixed(5);
+    }
+
     function renderResult(d) {
       if (d.price != null) {
-        document.getElementById('price-display').textContent = d.price.toFixed(5);
+        document.getElementById('price-display').textContent = fmtPrice(d.price);
         document.getElementById('price-symbol').textContent = d.symbol;
         document.getElementById('price-status').textContent = d.live ? '\u25cf live' : '\u25cb not live';
       } else {
@@ -240,11 +248,11 @@
       var ind = d.indicators || {};
       setT('kv-trend', d.trend || '\u2014');
       setT('kv-rsi', ind.rsi != null ? String(ind.rsi) : '\u2014');
-      setT('kv-sma20', ind.sma20 != null ? ind.sma20.toFixed(5) : '\u2014');
-      setT('kv-sma50', ind.sma50 != null ? ind.sma50.toFixed(5) : '\u2014');
-      setT('kv-ema9', ind.ema9 != null ? ind.ema9.toFixed(5) : '\u2014');
-      setT('kv-res', ind.resistance != null ? ind.resistance.toFixed(5) : '\u2014');
-      setT('kv-sup', ind.support != null ? ind.support.toFixed(5) : '\u2014');
+      setT('kv-sma20', fmtPrice(ind.sma20));
+      setT('kv-sma50', fmtPrice(ind.sma50));
+      setT('kv-ema9', fmtPrice(ind.ema9));
+      setT('kv-res', fmtPrice(ind.resistance));
+      setT('kv-sup', fmtPrice(ind.support));
       setT('kv-str', ind.candle_strength || '\u2014');
       setT('kv-source', d.data_source || '\u2014');
       setT('kv-live', d.live ? 'Yes' : 'No');
@@ -307,7 +315,7 @@
         ctx.beginPath(); ctx.moveTo(PAD.left, gy); ctx.lineTo(W - PAD.right, gy); ctx.stroke();
         var gp = yMax - (yRange / 5) * g;
         ctx.fillStyle = '#8896b0'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
-        ctx.fillText(gp.toFixed(5), W - PAD.right + 4, gy + 3);
+        ctx.fillText(fmtPrice(gp), W - PAD.right + 4, gy + 3);
       }
 
       candles.forEach(function(c, i) {
