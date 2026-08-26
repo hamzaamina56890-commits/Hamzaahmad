@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chinese-boot – Live Market Analysis</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+    header { background: #161b22; padding: 1rem 2rem; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #58a6ff; }
+    #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #f85149; display: inline-block; }
+    #status-dot.live { background: #3fb950; }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; display: flex; flex-direction: column; gap: 1.5rem; }
+    section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem; }
+    section h2 { font-size: 1rem; color: #8b949e; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
+    .controls { display: flex; gap: 1rem; flex-wrap: wrap; }
+    select, button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: .5rem .75rem; font-size: .9rem; cursor: pointer; }
+    select:focus, button:focus { outline: 2px solid #58a6ff; }
+    button { background: #238636; border-color: #2ea043; font-weight: 600; }
+    button:hover { background: #2ea043; }
+    button:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
+    #live-price { font-size: 2.5rem; font-weight: 700; color: #58a6ff; letter-spacing: .02em; }
+    #live-symbol { font-size: .9rem; color: #8b949e; margin-top: .25rem; }
+    #candle-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    #candle-table th { color: #8b949e; text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #30363d; }
+    #candle-table td { padding: .4rem .5rem; border-bottom: 1px solid #21262d; }
+    #candle-table tr:last-child td { border-bottom: none; }
+    .signal-badge { display: inline-block; padding: .25rem .75rem; border-radius: 2rem; font-weight: 700; font-size: .9rem; }
+    .signal-up { background: #1a4731; color: #3fb950; }
+    .signal-down { background: #3d1f22; color: #f85149; }
+    .signal-neutral { background: #1c2128; color: #8b949e; }
+    #analysis-reason { color: #8b949e; font-size: .85rem; margin-top: .75rem; }
+    #analysis-detail { display: flex; gap: 1.5rem; margin-top: .75rem; flex-wrap: wrap; }
+    .detail-item { font-size: .85rem; }
+    .detail-label { color: #8b949e; }
+    .detail-value { color: #e6edf3; font-weight: 600; }
+    #error-bar { display: none; background: #3d1f22; border: 1px solid #f85149; color: #f85149; border-radius: 6px; padding: .75rem 1rem; font-size: .85rem; }
+    .empty-state { color: #8b949e; font-size: .85rem; padding: .5rem 0; }
+  </style>
+</head>
+<body>
+<header>
+  <span id="status-dot" title="Connection status"></span>
+  <h1>Chinese-boot · Live Market Analysis</h1>
+</header>
+
+<main>
+  <div id="error-bar"></div>
+
+  <!-- Controls -->
+  <section>
+    <h2>Controls</h2>
+    <div class="controls">
+      <select id="asset-select"><option value="">Loading assets…</option></select>
+      <select id="timeframe-select"><option value="">Loading timeframes…</option></select>
+      <button id="analyze-btn" disabled>Analyse</button>
+    </div>
+  </section>
+
+  <!-- Live price -->
+  <section>
+    <h2>Live Price</h2>
+    <div id="live-price">—</div>
+    <div id="live-symbol">Select an asset to start</div>
+  </section>
+
+  <!-- Candle history -->
+  <section>
+    <h2>Candle History</h2>
+    <div id="candle-container">
+      <p class="empty-state">No candles yet. Use the WebSocket stream to populate history.</p>
+    </div>
+  </section>
+
+  <!-- Analysis -->
+  <section>
+    <h2>Analysis</h2>
+    <div id="analysis-signal"><span class="signal-badge signal-neutral">NEUTRAL</span></div>
+    <div id="analysis-reason">Click Analyse to run the signal engine.</div>
+    <div id="analysis-detail"></div>
+  </section>
+</main>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────
+  let selectedSymbol = "";
+  let selectedTimeframe = 60;
+  let candles = [];   // accumulated from WS or manual add
+  let wsConn = null;
+
+  // ── DOM refs ───────────────────────────────────────────────────────────
+  const assetSel    = document.getElementById("asset-select");
+  const tfSel       = document.getElementById("timeframe-select");
+  const analyzeBtn  = document.getElementById("analyze-btn");
+  const livePrice   = document.getElementById("live-price");
+  const liveSym     = document.getElementById("live-symbol");
+  const candleCont  = document.getElementById("candle-container");
+  const sigBadge    = document.getElementById("analysis-signal");
+  const sigReason   = document.getElementById("analysis-reason");
+  const sigDetail   = document.getElementById("analysis-detail");
+  const errorBar    = document.getElementById("error-bar");
+  const statusDot   = document.getElementById("status-dot");
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function showError(msg) {
+    errorBar.textContent = msg;
+    errorBar.style.display = "block";
+    setTimeout(() => { errorBar.style.display = "none"; }, 8000);
+  }
+
+  function setLivePrice(price, symbol) {
+    livePrice.textContent = price != null ? Number(price).toFixed(5) : "—";
+    liveSym.textContent = symbol || "—";
+  }
+
+  function renderCandles(list) {
+    if (!list.length) {
+      candleCont.innerHTML = '<p class="empty-state">No candles yet.</p>';
+      return;
+    }
+    const rows = list.slice(-20).reverse().map(c => `
+      <tr>
+        <td>${new Date(c.start_time * 1000).toLocaleTimeString()}</td>
+        <td>${Number(c.open).toFixed(5)}</td>
+        <td>${Number(c.high).toFixed(5)}</td>
+        <td>${Number(c.low).toFixed(5)}</td>
+        <td>${Number(c.close).toFixed(5)}</td>
+        <td>${c.tick_count ?? "—"}</td>
+      </tr>`).join("");
+    candleCont.innerHTML = `
+      <table id="candle-table">
+        <thead><tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Ticks</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function renderAnalysis(result) {
+    const sig = (result.signal || "NEUTRAL").toUpperCase();
+    const cls = sig === "UP" ? "signal-up" : sig === "DOWN" ? "signal-down" : "signal-neutral";
+    sigBadge.innerHTML = `<span class="signal-badge ${cls}">${sig}</span>`;
+    sigReason.textContent = result.reason || "";
+    const rsiText = result.rsi != null ? result.rsi.toFixed(2) : "N/A";
+    sigDetail.innerHTML = `
+      <div class="detail-item"><span class="detail-label">RSI: </span><span class="detail-value">${rsiText}</span></div>
+      <div class="detail-item"><span class="detail-label">Candles used: </span><span class="detail-value">${result.candle_count ?? 0}</span></div>`;
+  }
+
+  // ── Load assets & timeframes ───────────────────────────────────────────
+  async function loadAssets() {
+    try {
+      const resp = await fetch("/api/assets");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      assetSel.innerHTML = data.assets.map(a =>
+        `<option value="${a.symbol}">${a.symbol} – ${a.name}</option>`
+      ).join("");
+
+      tfSel.innerHTML = data.timeframes.map(t =>
+        `<option value="${t.seconds}">${t.label}</option>`
+      ).join("");
+
+      selectedSymbol    = assetSel.value;
+      selectedTimeframe = Number(tfSel.value);
+      analyzeBtn.disabled = false;
+    } catch (e) {
+      showError("Failed to load assets: " + e.message);
+    }
+  }
+
+  assetSel.addEventListener("change", () => {
+    selectedSymbol = assetSel.value;
+    candles = [];
+    renderCandles(candles);
+    setLivePrice(null, selectedSymbol);
+  });
+
+  tfSel.addEventListener("change", () => {
+    selectedTimeframe = Number(tfSel.value);
+    candles = [];
+    renderCandles(candles);
+  });
+
+  // ── Analyse ────────────────────────────────────────────────────────────
+  analyzeBtn.addEventListener("click", async () => {
+    if (!selectedSymbol) { showError("Select an asset first."); return; }
+    analyzeBtn.disabled = true;
+    try {
+      const resp = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: selectedSymbol,
+          timeframe: selectedTimeframe,
+          candles: candles,
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const result = await resp.json();
+      renderAnalysis(result);
+    } catch (e) {
+      showError("Analysis failed: " + e.message);
+    } finally {
+      analyzeBtn.disabled = false;
+    }
+  });
+
+  // ── WebSocket live-data stream ─────────────────────────────────────────
+  function connectWS() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const url   = `${proto}://${location.host}/ws/stream`;
+
+    try {
+      wsConn = new WebSocket(url);
+    } catch (e) {
+      // WS not available – degrade gracefully
+      return;
+    }
+
+    wsConn.addEventListener("open", () => {
+      statusDot.classList.add("live");
+      if (selectedSymbol) {
+        wsConn.send(JSON.stringify({ action: "subscribe", symbol: selectedSymbol }));
+      }
+    });
+
+    wsConn.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+
+        if (msg.type === "price") {
+          setLivePrice(msg.price, msg.symbol);
+        }
+
+        if (msg.type === "candle_closed") {
+          candles.push(msg.candle);
+          renderCandles(candles);
+        }
+      } catch (_) { /* ignore malformed frames */ }
+    });
+
+    wsConn.addEventListener("close", () => {
+      statusDot.classList.remove("live");
+      // reconnect after 5 s
+      setTimeout(connectWS, 5000);
+    });
+
+    wsConn.addEventListener("error", () => {
+      wsConn.close();
+    });
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────
+  loadAssets();
+  connectWS();
+</script>
+</body>
+</html>
