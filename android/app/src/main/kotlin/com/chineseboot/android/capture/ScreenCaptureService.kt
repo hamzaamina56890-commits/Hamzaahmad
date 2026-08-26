@@ -184,7 +184,8 @@ class ScreenCaptureService : Service() {
                 try {
                     val excludeRegions = buildExcludeRegions(frame)
                     val result = analyzer.analyze(frame, excludeRegions)
-                    repository.publishRecognition(result)
+                    repository.publishRecognition(result.recognition)
+                    repository.publishSnapshot(result.snapshot)
                 } finally {
                     isProcessingFrame.set(false)
                 }

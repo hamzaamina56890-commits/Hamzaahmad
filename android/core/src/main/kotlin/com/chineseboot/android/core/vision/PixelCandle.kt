@@ -27,22 +27,11 @@ data class PixelCandle(
 }
 
 /**
- * Maps a pixel Y coordinate within a detected chart region to a real price,
- * and a candle index to a real open time. Only ever created once a genuine,
- * verifiable price/time scale has been read from the chart's own axis labels
- * — never inferred or guessed.
- */
-class PriceScaleCalibration(
-    private val pixelToPrice: (Int) -> Double,
-    val timeframeSeconds: Int,
-) {
-    fun priceAt(pixelY: Int): Double = pixelToPrice(pixelY)
-}
-
-/**
  * A candle with real OHLC values. Can only be constructed from a
  * [PixelCandle] plus a verified [PriceScaleCalibration] — there is
- * intentionally no path that fabricates one from geometry alone.
+ * intentionally no path that fabricates one from geometry alone. Geometry
+ * that is impossible (e.g. high below the body) is rejected by returning
+ * `null` rather than silently producing a corrupted candle.
  */
 data class CalibratedCandle(
     val pixel: PixelCandle,
@@ -51,9 +40,22 @@ data class CalibratedCandle(
     val high: Double,
     val low: Double,
     val close: Double,
+    val calibrationConfidence: Double,
 ) {
+    val detectionConfidence: Double get() = pixel.detectionConfidence
+    val bullish: Boolean get() = close >= open
+    val bodySize: Double get() = kotlin.math.abs(close - open)
+    val upperWick: Double get() = high - maxOf(open, close)
+    val lowerWick: Double get() = minOf(open, close) - low
+
     companion object {
-        fun from(pixel: PixelCandle, calibration: PriceScaleCalibration, openTimeMillis: Long): CalibratedCandle {
+        private const val MIN_PIXEL_HEIGHT = 1
+
+        fun from(pixel: PixelCandle, calibration: PriceScaleCalibration, openTimeMillis: Long): CalibratedCandle? {
+            // Reject candles with degenerate pixel geometry before trusting them.
+            if (pixel.wickBottom - pixel.wickTop < MIN_PIXEL_HEIGHT) return null
+            if (pixel.bodyTop > pixel.bodyBottom) return null
+
             // Candle drawing convention: the top of the wick is the highest traded
             // price, the bottom of the wick is the lowest. Open/close come from the
             // body edges; which edge is "open" vs "close" depends on direction.
@@ -66,7 +68,13 @@ data class CalibratedCandle(
                 PixelCandleDirection.BEARISH -> bodyEdgeA to bodyEdgeB
                 PixelCandleDirection.UNKNOWN -> bodyEdgeB to bodyEdgeA
             }
-            return CalibratedCandle(pixel, openTimeMillis, open, high, low, close)
+
+            // Reject impossible geometry rather than fabricating a "close enough" candle.
+            if (high < low) return null
+            if (high < maxOf(open, close) - 1e-9) return null
+            if (low > minOf(open, close) + 1e-9) return null
+
+            return CalibratedCandle(pixel, openTimeMillis, open, high, low, close, calibration.confidence)
         }
     }
 }

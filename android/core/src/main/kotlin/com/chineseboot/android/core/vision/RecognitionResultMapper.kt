@@ -6,12 +6,13 @@ import com.chineseboot.android.core.model.ChartDetectionState
 import com.chineseboot.android.core.model.Signal
 
 /**
- * Maps a [RecognitionResult] to the [AnalysisSnapshot] the overlay renders.
- * Deliberately never sets [AnalysisSnapshot.price] or a real UP/DOWN
- * [AnalysisSnapshot.signal] — real OHLC prices require a verified
- * [PriceScaleCalibration], which this stage does not yet produce (see
- * `PriceScaleCalibration` / remaining work notes). Until then, a detected
- * chart is reported as [Signal.WAIT].
+ * Maps a [RecognitionResult] to the [AnalysisSnapshot] the overlay renders,
+ * without any price-scale calibration or price labels. Deliberately never
+ * sets [AnalysisSnapshot.price] or a real UP/DOWN [AnalysisSnapshot.signal].
+ * Kept for callers that only have geometric recognition available; when
+ * price labels are available, prefer
+ * `com.chineseboot.android.core.analysis.AnalysisOrchestrator.analyze`,
+ * which performs full price/time calibration and technical analysis.
  */
 fun RecognitionResult.toAnalysisSnapshot(): AnalysisSnapshot = when (status) {
     ChartRecognitionStatus.CHART_NOT_DETECTED -> AnalysisSnapshot.notDetected(frameTimestampMillis)

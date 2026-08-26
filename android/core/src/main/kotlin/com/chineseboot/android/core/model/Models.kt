@@ -52,6 +52,8 @@ data class AnalysisSnapshot(
     val analysisWindow: Int = 0,
     val timestampMillis: Long = 0L,
     val candleColorKnown: Boolean = false,
+    /** Price-scale calibration quality (0.0-1.0), for diagnostic/debug display only. Null when unavailable. */
+    val calibrationQuality: Double? = null,
 ) {
     companion object {
         fun notDetected(timestampMillis: Long): AnalysisSnapshot =

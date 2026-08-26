@@ -19,10 +19,15 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.lifecycleScope
 import com.chineseboot.android.ChineseBootApp
 import com.chineseboot.android.R
+import com.chineseboot.android.core.analysis.OverlayPresentation
+import com.chineseboot.android.core.model.AnalysisSnapshot
 import com.chineseboot.android.core.vision.ChartRecognitionResult
 import com.chineseboot.android.core.vision.PixelRect
-import com.chineseboot.android.core.vision.RecognitionState
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Draws the small floating analysis panel using [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY].
@@ -132,37 +137,45 @@ class OverlayService : Service(), LifecycleOwner {
 
     private fun observeState() {
         lifecycleScope.launch {
-            repository.recognition.collect { result ->
-                overlayView?.let { render(it, result) }
-            }
+            combine(repository.snapshot, repository.recognition) { snapshot, recognition -> snapshot to recognition }
+                .collect { (snapshot, recognition) ->
+                    overlayView?.let { render(it, snapshot, recognition) }
+                }
         }
     }
 
-    private fun render(view: View, result: ChartRecognitionResult?) {
+    private fun render(view: View, snapshot: AnalysisSnapshot?, recognition: ChartRecognitionResult?) {
         val statusText = view.findViewById<android.widget.TextView>(R.id.overlay_status)
         val detailText = view.findViewById<android.widget.TextView>(R.id.overlay_details)
 
-        if (result == null) {
-            statusText.text = getString(R.string.status_scanning)
+        if (snapshot == null) {
+            statusText.text = "CHINESE-BOOT\n${getString(R.string.status_scanning)}"
             detailText.text = ""
             return
         }
 
-        statusText.text = when (result.state) {
-            RecognitionState.CHART_NOT_DETECTED -> getString(R.string.status_chart_not_detected)
-            RecognitionState.CANDLES_NOT_RELIABLE -> getString(R.string.status_candles_not_reliable)
-            RecognitionState.CANDLE_COLOR_UNKNOWN -> getString(R.string.status_candle_color_unknown)
-            RecognitionState.READY -> getString(R.string.status_ready)
-        }
+        val statusWord = OverlayPresentation.statusWord(snapshot.state)
+        statusText.text = "CHINESE-BOOT\nStatus: $statusWord"
+
+        val signalText = snapshot.signal?.name ?: "WAIT"
+        val trendText = OverlayPresentation.trendWord(snapshot.trend)
+        val recognitionQuality = recognition?.let { "${(it.overallConfidence * 100).toInt()}% (${it.candles.size} candles)" }
+            ?: "n/a"
+        val timestampText = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(snapshot.timestampMillis))
 
         detailText.text = buildString {
-            append("Asset: ${result.asset ?: getString(R.string.value_asset_unknown)}\n")
-            append("Timeframe: ${result.timeframeSeconds?.let { "${it}s" } ?: getString(R.string.value_timeframe_unknown)}\n")
-            append("Candles detected: ${result.candles.size}\n")
-            append("Candle quality: ${(result.candleQuality * 100).toInt()}%\n")
-            append("Confidence: ${(result.overallConfidence * 100).toInt()}%\n")
-            // Trade-signal generation is not implemented yet — never imply a decision here.
-            append("Signal: WAIT")
+            append("Asset: ${snapshot.asset ?: getString(R.string.value_asset_unknown)}\n")
+            append("Timeframe: ${snapshot.timeframeSeconds?.let { "${it}s" } ?: getString(R.string.value_timeframe_unknown)}\n")
+            append("Signal: $signalText\n")
+            append("Confidence: ${snapshot.confidencePercent ?: 0}%\n")
+            append("Trend: $trendText\n")
+            append("RSI: ${snapshot.rsi?.let { "%.1f".format(it) } ?: "N/A"}\n")
+            append("Support: ${snapshot.support?.let { "%.5f".format(it) } ?: "N/A"}\n")
+            append("Resistance: ${snapshot.resistance?.let { "%.5f".format(it) } ?: "N/A"}\n")
+            append("Reason: ${snapshot.reason ?: "-"}\n")
+            append("Candle count: ${snapshot.analysisWindow}\n")
+            append("Recognition: $recognitionQuality\n")
+            append("Timestamp: $timestampText")
         }
     }
 
