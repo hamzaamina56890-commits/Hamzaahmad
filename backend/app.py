@@ -16,7 +16,6 @@ app = FastAPI(title="Chinese-boot", version="0.1.0")
 ROOT = Path(__file__).resolve().parent.parent
 
 _provider: TwelveDataProvider | None = None
-_candle_builder = CandleBuilder()
 
 
 def _get_provider() -> TwelveDataProvider:
@@ -54,7 +53,7 @@ async def status():
 @app.websocket("/ws/stream")
 async def ws_stream(websocket: WebSocket):
     """
-    Client sends: {"action": "subscribe", "symbol": "EUR/USD"}
+    Client sends: {"action": "subscribe", "symbol": "EUR/USD", "timeframe": 60}
     Server sends:
       {"type": "price", "symbol": "...", "price": 1.0835, "timestamp": 1234567890}
       {"type": "candle_closed", "candle": {...}}
@@ -95,10 +94,14 @@ async def ws_stream(websocket: WebSocket):
         await websocket.close()
         return
 
+    # Each connection gets its own CandleBuilder to avoid shared-state races.
+    candle_builder = CandleBuilder()
+    conn_provider = TwelveDataProvider(api_key=provider.api_key)
+
     try:
-        async for frame in provider.stream([symbol]):
+        async for frame in conn_provider.stream([symbol]):
             if frame.get("event") == "price":
-                price_info = provider.get_latest_price(symbol)
+                price_info = conn_provider.get_latest_price(symbol)
                 if price_info:
                     await websocket.send_text(
                         json.dumps(
@@ -110,7 +113,7 @@ async def ws_stream(websocket: WebSocket):
                             }
                         )
                     )
-                    result = _candle_builder.update(
+                    result = candle_builder.update(
                         symbol=symbol,
                         price=price_info["price"],
                         timestamp=int(price_info["timestamp"] or 0),
@@ -135,7 +138,7 @@ async def ws_stream(websocket: WebSocket):
         except Exception:
             pass
     finally:
-        await provider.close()
+        await conn_provider.close()
 
 
 @app.get("/")

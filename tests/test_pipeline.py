@@ -89,15 +89,13 @@ class TestTwelveDataProviderUnit:
         os.environ.pop("TWELVE_DATA_API_KEY", None)
         provider.api_key = None
         with pytest.raises(RuntimeError, match="TWELVE_DATA_API_KEY"):
-            asyncio.get_event_loop().run_until_complete(provider.connect())
+            asyncio.run(provider.connect())
 
     def test_subscribe_raises_when_not_connected(self):
         import asyncio
         provider = TwelveDataProvider(api_key="dummy")
         with pytest.raises(RuntimeError, match="not connected"):
-            asyncio.get_event_loop().run_until_complete(
-                provider.subscribe(["EUR/USD"])
-            )
+            asyncio.run(provider.subscribe(["EUR/USD"]))
 
     def test_get_latest_price_none_initially(self):
         provider = TwelveDataProvider(api_key="dummy")
@@ -106,7 +104,7 @@ class TestTwelveDataProviderUnit:
     def test_health_check_returns_dict(self):
         import asyncio
         provider = TwelveDataProvider(api_key="dummy")
-        health = asyncio.get_event_loop().run_until_complete(provider.health_check())
+        health = asyncio.run(provider.health_check())
         assert "provider" in health
         assert "connected" in health
 
