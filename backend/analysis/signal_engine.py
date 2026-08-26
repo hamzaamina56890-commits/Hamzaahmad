@@ -246,9 +246,9 @@ def analyze(payload: dict[str, Any]) -> dict[str, Any]:
                 candle_strength["lower_wick_ratio"], 4
             ),
             "recent_structure": (
-                "higher-highs"
+                "higher-highs/higher-lows"
                 if structure_bias > 0
-                else "lower-lows"
+                else "lower-highs/lower-lows"
                 if structure_bias < 0
                 else "mixed"
             ),
@@ -374,6 +374,10 @@ def _normalize_candles(
             f"candles[{index}].close",
         )
 
+        if high_price < low_price:
+            raise AnalysisValidationError(
+                f"Invalid prices in candle at index {index}: high must be >= low."
+            )
         if high_price < max(open_price, close_price):
             raise AnalysisValidationError(
                 f"Invalid prices in candle at index {index}: high is inconsistent."
@@ -381,10 +385,6 @@ def _normalize_candles(
         if low_price > min(open_price, close_price):
             raise AnalysisValidationError(
                 f"Invalid prices in candle at index {index}: low is inconsistent."
-            )
-        if high_price < low_price:
-            raise AnalysisValidationError(
-                f"Invalid prices in candle at index {index}: high must be >= low."
             )
 
         normalized.append(
@@ -460,6 +460,11 @@ def _sma(values: Iterable[float], period: int) -> float:
 
 
 def _rsi(closes: list[float], period: int) -> float:
+    if len(closes) < period + 1:
+        raise AnalysisValidationError(
+            "Insufficient candle history for RSI calculation."
+        )
+
     changes = [
         current - previous
         for previous, current in zip(closes, closes[1:])
@@ -474,7 +479,7 @@ def _rsi(closes: list[float], period: int) -> float:
         average_gain = ((average_gain * (period - 1)) + gain) / period
         average_loss = ((average_loss * (period - 1)) + loss) / period
 
-    if average_loss == 0:
+    if average_loss < 1e-10:
         return 100.0
 
     relative_strength = average_gain / average_loss
@@ -495,13 +500,13 @@ def _structure_bias(
     recent_closes = closes[-STRUCTURE_WINDOW:]
 
     ascending = (
-        recent_highs[-1] > max(recent_highs[:-1])
-        and recent_lows[-1] > min(recent_lows[:-1])
+        recent_highs[-1] > recent_highs[-2]
+        and recent_lows[-1] > recent_lows[-2]
         and recent_closes[-1] > recent_closes[0]
     )
     descending = (
-        recent_highs[-1] < max(recent_highs[:-1])
-        and recent_lows[-1] < min(recent_lows[:-1])
+        recent_highs[-1] < recent_highs[-2]
+        and recent_lows[-1] < recent_lows[-2]
         and recent_closes[-1] < recent_closes[0]
     )
 
@@ -560,9 +565,9 @@ def _trend_label(
     ema_slow: float,
     structure_bias: int,
 ) -> str:
-    if ema_fast > ema_slow and structure_bias >= 0:
+    if ema_fast > ema_slow and structure_bias > 0:
         return "UPTREND"
-    if ema_fast < ema_slow and structure_bias <= 0:
+    if ema_fast < ema_slow and structure_bias < 0:
         return "DOWNTREND"
     return "SIDEWAYS"
 

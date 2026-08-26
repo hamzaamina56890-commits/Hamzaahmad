@@ -111,7 +111,7 @@ class SignalEngineTests(unittest.TestCase):
         result = analyze(
             {
                 "symbol": "EUR/USD",
-                "timeframe_seconds": 60,
+                "timeframe": 60,
                 "candles": make_candles(closes),
                 "data_source": "Verified Feed",
                 "data_verified": True,
@@ -239,6 +239,20 @@ class SignalEngineTests(unittest.TestCase):
                     "data_verified": False,
                 }
             )
+
+    def test_timeframe_seconds_alias_is_supported(self):
+        closes = [1.1500 + (step * 0.0003) for step in range(25)]
+        result = analyze(
+            {
+                "symbol": "EUR/USD",
+                "timeframe_seconds": 60,
+                "candles": make_candles(closes),
+                "data_source": "Twelve Data",
+                "data_verified": True,
+            }
+        )
+
+        self.assertEqual(result["timeframe"]["seconds"], 60)
 
 
 if __name__ == "__main__":
