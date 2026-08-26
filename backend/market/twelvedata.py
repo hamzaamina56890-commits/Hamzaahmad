@@ -100,6 +100,11 @@ class TwelveDataProvider:
             await self.websocket.close()
             self.websocket = None
 
+    def reset(self) -> None:
+        """Reset connection state so the provider can reconnect cleanly."""
+        self.connected = False
+        self.websocket = None
+
     def get_latest_price(
         self,
         symbol: str,
