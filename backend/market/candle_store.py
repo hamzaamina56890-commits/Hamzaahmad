@@ -48,7 +48,11 @@ class CandleStore:
             return []
 
         candles = self._candles.get((symbol, timeframe_seconds), [])
-        return candles[-limit:]
+        ordered = sorted(
+            candles,
+            key=lambda candle: candle.start_time,
+        )
+        return ordered[-limit:]
 
     def get_all_candles(
         self,
@@ -57,4 +61,8 @@ class CandleStore:
     ) -> list[Candle]:
         """Return all stored candles for the symbol and timeframe."""
 
-        return list(self._candles.get((symbol, timeframe_seconds), []))
+        candles = self._candles.get((symbol, timeframe_seconds), [])
+        return sorted(
+            candles,
+            key=lambda candle: candle.start_time,
+        )
