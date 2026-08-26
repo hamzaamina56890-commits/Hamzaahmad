@@ -19,8 +19,9 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.lifecycleScope
 import com.chineseboot.android.ChineseBootApp
 import com.chineseboot.android.R
-import com.chineseboot.android.core.model.AnalysisSnapshot
-import com.chineseboot.android.core.model.ChartDetectionState
+import com.chineseboot.android.core.vision.ChartRecognitionResult
+import com.chineseboot.android.core.vision.PixelRect
+import com.chineseboot.android.core.vision.RecognitionState
 import kotlinx.coroutines.launch
 
 /**
@@ -90,6 +91,16 @@ class OverlayService : Service(), LifecycleOwner {
 
         windowManager?.addView(view, params)
         overlayView = view
+
+        view.post { publishOverlayBounds(view, params) }
+        view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> publishOverlayBounds(view, params) }
+    }
+
+    /** Reports the overlay's own on-screen bounds so the capture pipeline can exclude them. */
+    private fun publishOverlayBounds(view: View, params: WindowManager.LayoutParams) {
+        val width = view.width.takeIf { it > 0 } ?: return
+        val height = view.height.takeIf { it > 0 } ?: return
+        repository.updateOverlayBounds(PixelRect(params.x.coerceAtLeast(0), params.y.coerceAtLeast(0), width, height))
     }
 
     private fun makeDraggable(view: View, params: WindowManager.LayoutParams) {
@@ -111,6 +122,7 @@ class OverlayService : Service(), LifecycleOwner {
                     params.x = initialX + (event.rawX - initialTouchX).toInt()
                     params.y = initialY + (event.rawY - initialTouchY).toInt()
                     windowManager?.updateViewLayout(view, params)
+                    publishOverlayBounds(view, params)
                     true
                 }
                 else -> false
@@ -120,44 +132,37 @@ class OverlayService : Service(), LifecycleOwner {
 
     private fun observeState() {
         lifecycleScope.launch {
-            repository.snapshot.collect { snapshot ->
-                overlayView?.let { render(it, snapshot) }
+            repository.recognition.collect { result ->
+                overlayView?.let { render(it, result) }
             }
         }
     }
 
-    private fun render(view: View, snapshot: AnalysisSnapshot?) {
+    private fun render(view: View, result: ChartRecognitionResult?) {
         val statusText = view.findViewById<android.widget.TextView>(R.id.overlay_status)
         val detailText = view.findViewById<android.widget.TextView>(R.id.overlay_details)
 
-        if (snapshot == null) {
+        if (result == null) {
             statusText.text = getString(R.string.status_scanning)
             detailText.text = ""
             return
         }
 
-        statusText.text = when (snapshot.state) {
-            ChartDetectionState.CHART_NOT_DETECTED -> getString(R.string.status_chart_not_detected)
-            ChartDetectionState.WAITING_FOR_MORE_DATA -> getString(R.string.status_waiting_for_data)
-            ChartDetectionState.SCANNING -> getString(R.string.status_scanning)
-            ChartDetectionState.READY -> getString(R.string.status_ready)
+        statusText.text = when (result.state) {
+            RecognitionState.CHART_NOT_DETECTED -> getString(R.string.status_chart_not_detected)
+            RecognitionState.CANDLES_NOT_RELIABLE -> getString(R.string.status_candles_not_reliable)
+            RecognitionState.CANDLE_COLOR_UNKNOWN -> getString(R.string.status_candle_color_unknown)
+            RecognitionState.READY -> getString(R.string.status_ready)
         }
 
         detailText.text = buildString {
-            snapshot.asset?.let { append("Asset: $it\n") }
-            snapshot.timeframeSeconds?.let { append("TF: ${it}s\n") }
-            snapshot.price?.let { append("Price: $it\n") }
-            snapshot.direction?.let { append("Candle: $it\n") }
-            snapshot.strength?.let { append("Strength: ${"%.2f".format(it)}\n") }
-            snapshot.rsi?.let { append("RSI: ${"%.1f".format(it)}\n") }
-            snapshot.trend?.let { append("Trend: $it\n") }
-            if (snapshot.support != null && snapshot.resistance != null) {
-                append("S/R: ${snapshot.support} / ${snapshot.resistance}\n")
-            }
-            snapshot.signal?.let { append("Signal: $it\n") }
-            snapshot.confidencePercent?.let { append("Confidence: $it%\n") }
-            snapshot.reason?.let { append("Reason: $it\n") }
-            append("Window: ${snapshot.analysisWindow} candles")
+            append("Asset: ${result.asset ?: getString(R.string.value_asset_unknown)}\n")
+            append("Timeframe: ${result.timeframeSeconds?.let { "${it}s" } ?: getString(R.string.value_timeframe_unknown)}\n")
+            append("Candles detected: ${result.candles.size}\n")
+            append("Candle quality: ${(result.candleQuality * 100).toInt()}%\n")
+            append("Confidence: ${(result.overallConfidence * 100).toInt()}%\n")
+            // Trade-signal generation is not implemented yet — never imply a decision here.
+            append("Signal: WAIT")
         }
     }
 

@@ -21,7 +21,10 @@ import com.chineseboot.android.R
 import com.chineseboot.android.ChineseBootApp
 import com.chineseboot.android.analysis.ChartCaptureAnalyzer
 import com.chineseboot.android.core.capture.CaptureEvent
+import com.chineseboot.android.core.vision.FrameBuffer
+import com.chineseboot.android.core.vision.PixelRect
 import com.chineseboot.android.overlay.OverlayService
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,6 +55,13 @@ class ScreenCaptureService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "capture_channel"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "ScreenCaptureService"
+
+        /** Downsampling factor applied when converting a captured frame (see [toFrameBuffer]). */
+        private const val FRAME_SAMPLE_STRIDE = 4
+
+        /** Minimum spacing between processed frames — chart recognition never needs to run
+         *  at full display frame rate, and throttling keeps the overlay/UI thread responsive. */
+        private const val MIN_FRAME_INTERVAL_MS = 400L
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
@@ -60,6 +70,11 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private lateinit var analyzer: ChartCaptureAnalyzer
+
+    @Volatile private var lastProcessedAtMillis = 0L
+    private val isProcessingFrame = AtomicBoolean(false)
+    private var statusBarHeightPx = 0
+    private var navigationBarHeightPx = 0
 
     private val repository get() = (application as ChineseBootApp).captureRepository
 
@@ -74,7 +89,14 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         analyzer = ChartCaptureAnalyzer()
+        statusBarHeightPx = systemBarHeightPx("status_bar_height")
+        navigationBarHeightPx = systemBarHeightPx("navigation_bar_height")
         createNotificationChannel()
+    }
+
+    private fun systemBarHeightPx(resourceName: String): Int {
+        val id = resources.getIdentifier(resourceName, "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else 0
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -139,20 +161,69 @@ class ScreenCaptureService : Service() {
 
         reader.setOnImageAvailableListener({ imageReader ->
             val image = imageReader.acquireLatestImage()
-            if (image != null) {
+            if (image == null) return@setOnImageAvailableListener
+
+            val now = System.currentTimeMillis()
+            val dueForProcessing = now - lastProcessedAtMillis >= MIN_FRAME_INTERVAL_MS
+            if (!dueForProcessing || !isProcessingFrame.compareAndSet(false, true)) {
+                // Drop this frame — either it's too soon, or a previous frame is still
+                // being analyzed. This is the frame-sampling/throttling required to
+                // avoid blocking the UI thread and to keep the overlay responsive.
+                image.close()
+                return@setOnImageAvailableListener
+            }
+            lastProcessedAtMillis = now
+
+            val frame = try {
+                image.toFrameBuffer(now, FRAME_SAMPLE_STRIDE)
+            } finally {
+                image.close()
+            }
+
+            serviceScope.launch {
                 try {
-                    serviceScope.launch {
-                        val snapshot = analyzer.onFrame(System.currentTimeMillis())
-                        repository.publishSnapshot(snapshot)
-                    }
+                    val excludeRegions = buildExcludeRegions(frame)
+                    val result = analyzer.analyze(frame, excludeRegions)
+                    repository.publishRecognition(result)
                 } finally {
-                    image.close()
+                    isProcessingFrame.set(false)
                 }
             }
         }, null)
 
         repository.dispatch(CaptureEvent.CaptureStarted)
         OverlayService.start(this)
+    }
+
+    /**
+     * Regions the vision pipeline must ignore: the status bar, the navigation
+     * bar, and the app's own floating overlay — all converted into the same
+     * downsampled coordinate space as [frame].
+     */
+    private fun buildExcludeRegions(frame: FrameBuffer): List<PixelRect> {
+        val stride = FRAME_SAMPLE_STRIDE
+        val regions = mutableListOf<PixelRect>()
+
+        val statusBarScaled = statusBarHeightPx / stride
+        if (statusBarScaled > 0) {
+            regions += PixelRect(0, 0, frame.width, statusBarScaled)
+        }
+
+        val navBarScaled = navigationBarHeightPx / stride
+        if (navBarScaled > 0) {
+            regions += PixelRect(0, (frame.height - navBarScaled).coerceAtLeast(0), frame.width, navBarScaled)
+        }
+
+        repository.overlayBoundsPx.value?.let { overlayBounds ->
+            regions += PixelRect(
+                x = (overlayBounds.x / stride).coerceAtLeast(0),
+                y = (overlayBounds.y / stride).coerceAtLeast(0),
+                width = (overlayBounds.width / stride).coerceAtLeast(1),
+                height = (overlayBounds.height / stride).coerceAtLeast(1),
+            )
+        }
+
+        return regions
     }
 
     private fun stopSelfSafely() {
@@ -163,7 +234,6 @@ class ScreenCaptureService : Service() {
         mediaProjection?.unregisterCallback(projectionCallback)
         mediaProjection?.stop()
         mediaProjection = null
-        analyzer.reset()
         OverlayService.stop(this)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

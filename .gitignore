@@ -1,6 +1,9 @@
 android/*/build/
 android/build/
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/*.iml
 android/.idea/
+__pycache__/
+*.pyc

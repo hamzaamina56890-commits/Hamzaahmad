@@ -1,31 +1,19 @@
 package com.chineseboot.android.analysis
 
-import com.chineseboot.android.core.model.AnalysisSnapshot
-import com.chineseboot.android.core.model.Candle
+import com.chineseboot.android.core.vision.ChartRecognitionEngine
+import com.chineseboot.android.core.vision.ChartRecognitionResult
+import com.chineseboot.android.core.vision.FrameBuffer
+import com.chineseboot.android.core.vision.PixelRect
 
 /**
- * Turns raw captured frames into candle data and hands the result to the
- * [com.chineseboot.android.core.analysis.SignalEngine].
- *
- * NOTE: chart-region detection and candle/pixel extraction are not implemented
- * yet (see project README under android/ for remaining work). This stub never
- * invents an asset, price or candle — it only reports that no chart has been
- * detected, which is the contractually safe default until real detection is
- * implemented.
+ * Runs the real chart-region/candle/color-convention recognition pipeline
+ * (`core.vision`) against a captured frame. Never fabricates a result: an
+ * absent/low-confidence chart region or unreliable candles are reported
+ * honestly through [ChartRecognitionResult.state].
  */
-class ChartCaptureAnalyzer {
-    private val candles = mutableListOf<Candle>()
-
-    /**
-     * Process one captured frame. Returns the current [AnalysisSnapshot].
-     * Today this always yields "chart not detected" because pixel-level chart
-     * detection is not implemented in this stage of the project.
-     */
-    fun onFrame(timestampMillis: Long): AnalysisSnapshot {
-        return AnalysisSnapshot.notDetected(timestampMillis)
-    }
-
-    fun reset() {
-        candles.clear()
-    }
+class ChartCaptureAnalyzer(
+    private val engine: ChartRecognitionEngine = ChartRecognitionEngine(),
+) {
+    fun analyze(frame: FrameBuffer, excludeRegions: List<PixelRect>): ChartRecognitionResult =
+        engine.analyze(frame, excludeRegions)
 }

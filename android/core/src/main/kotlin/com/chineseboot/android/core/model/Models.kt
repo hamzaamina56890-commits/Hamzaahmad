@@ -51,6 +51,7 @@ data class AnalysisSnapshot(
     val reason: String? = null,
     val analysisWindow: Int = 0,
     val timestampMillis: Long = 0L,
+    val candleColorKnown: Boolean = false,
 ) {
     companion object {
         fun notDetected(timestampMillis: Long): AnalysisSnapshot =

@@ -13,7 +13,12 @@
     <string name="status_scanning">SCANNING</string>
     <string name="status_chart_not_detected">CHART NOT DETECTED\nPosition the chart clearly on screen.</string>
     <string name="status_waiting_for_data">WAITING FOR MORE DATA</string>
+    <string name="status_candles_not_reliable">CANDLES NOT RELIABLE</string>
+    <string name="status_candle_color_unknown">CANDLE_COLOR_UNKNOWN</string>
     <string name="status_ready">READY</string>
+
+    <string name="value_asset_unknown">ASSET_UNKNOWN</string>
+    <string name="value_timeframe_unknown">TIMEFRAME_UNKNOWN</string>
 
     <string name="capture_notification_channel_name">Screen capture</string>
     <string name="capture_notification_title">Chinese-boot is analyzing your screen</string>
