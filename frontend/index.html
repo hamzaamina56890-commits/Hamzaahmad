@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chinese-boot — Live Signal Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 24px; color: #f7fafc; }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 24px;
+      width: 100%;
+      max-width: 860px;
+    }
+
+    select, button {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      color: #e2e8f0;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    button {
+      background: #2b6cb0;
+      border-color: #2b6cb0;
+      font-weight: 600;
+    }
+
+    button:hover { background: #2c5282; }
+    button:disabled { background: #2d3748; border-color: #2d3748; cursor: not-allowed; }
+
+    .card {
+      background: #1a202c;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 20px;
+      width: 100%;
+      max-width: 860px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #a0aec0; text-transform: uppercase; letter-spacing: .05em; }
+
+    .price-display {
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: #68d391;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .price-display.down { color: #fc8181; }
+    .price-display.neutral { color: #e2e8f0; }
+
+    #status-badge {
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 99px;
+      display: inline-block;
+      margin-top: 8px;
+    }
+
+    .badge-ok { background: #276749; color: #9ae6b4; }
+    .badge-warn { background: #744210; color: #fbd38d; }
+    .badge-err { background: #742a2a; color: #feb2b2; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #2d3748; }
+    th { color: #a0aec0; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+
+    #direction-box {
+      font-size: 2rem;
+      font-weight: 800;
+      text-align: center;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+
+    .dir-up { background: #1c4532; color: #68d391; }
+    .dir-down { background: #742a2a; color: #fc8181; }
+    .dir-neutral { background: #2d3748; color: #a0aec0; }
+
+    #error-box {
+      background: #742a2a;
+      color: #feb2b2;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      display: none;
+      max-width: 860px;
+      width: 100%;
+    }
+
+    #candle-table-wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>🕯 Chinese-boot — Live Signal Dashboard</h1>
+
+  <div id="error-box"></div>
+
+  <div class="controls">
+    <select id="asset-select"><option value="">Loading assets…</option></select>
+    <select id="tf-select"><option value="">Loading timeframes…</option></select>
+    <button id="analyze-btn" disabled>Analyse</button>
+    <span id="status-badge" class="badge-warn">Not configured</span>
+  </div>
+
+  <div class="card">
+    <h2>Live Price</h2>
+    <div id="live-price" class="price-display neutral">—</div>
+    <div style="color:#a0aec0;font-size:.8rem;margin-top:6px;">Price data is sourced from Twelve Data via WebSocket when TWELVE_DATA_API_KEY is configured.</div>
+  </div>
+
+  <div class="card">
+    <h2>Analysis</h2>
+    <div id="direction-box" class="dir-neutral">NEUTRAL</div>
+    <table style="margin-top:14px;">
+      <thead><tr><th>Indicator</th><th>Value</th></tr></thead>
+      <tbody id="indicator-table">
+        <tr><td>RSI (14)</td><td id="rsi-val">—</td></tr>
+        <tr><td>SMA (20)</td><td id="sma-val">—</td></tr>
+        <tr><td>Candles used</td><td id="candle-count-val">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Recent Candles <span style="font-weight:400;color:#a0aec0;font-size:.8rem;">(mock history — replace with live feed)</span></h2>
+    <div id="candle-table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>
+        <tbody id="candle-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API = "";  // same origin
+
+    // ── utilities ────────────────────────────────────────────────────────
+    function showError(msg) {
+      const b = document.getElementById("error-box");
+      b.textContent = msg;
+      b.style.display = msg ? "block" : "none";
+    }
+
+    function setStatusBadge(ok, label) {
+      const el = document.getElementById("status-badge");
+      el.textContent = label;
+      el.className = ok ? "badge-ok" : "badge-warn";
+    }
+
+    // ── load assets + timeframes ─────────────────────────────────────────
+    async function loadAssets() {
+      try {
+        const resp = await fetch(`${API}/api/assets`);
+        if (!resp.ok) throw new Error(`/api/assets returned ${resp.status}`);
+        const data = await resp.json();
+
+        const asel = document.getElementById("asset-select");
+        asel.innerHTML = "";
+        data.assets.forEach(a => {
+          const opt = document.createElement("option");
+          opt.value = a.symbol;
+          opt.textContent = `${a.symbol} — ${a.name}`;
+          asel.appendChild(opt);
+        });
+
+        const tsel = document.getElementById("tf-select");
+        tsel.innerHTML = "";
+        data.timeframes.forEach(t => {
+          const opt = document.createElement("option");
+          opt.value = t.seconds;
+          opt.textContent = t.label;
+          tsel.appendChild(opt);
+        });
+
+        document.getElementById("analyze-btn").disabled = false;
+        showError("");
+      } catch (e) {
+        showError("Failed to load assets: " + e.message);
+      }
+    }
+
+    // ── load status ───────────────────────────────────────────────────────
+    async function loadStatus() {
+      try {
+        const resp = await fetch(`${API}/api/status`);
+        if (!resp.ok) throw new Error(`/api/status returned ${resp.status}`);
+        const data = await resp.json();
+        setStatusBadge(data.api_key_configured, data.api_key_configured ? "API key configured" : "API key missing");
+      } catch (e) {
+        setStatusBadge(false, "Status unavailable");
+      }
+    }
+
+    // ── build demo candles ────────────────────────────────────────────────
+    function buildDemoCandles(symbol, tfSeconds, count) {
+      // Demo candles built from a deterministic seed — NOT real market data.
+      // Replace with live candle feed when Twelve Data is connected.
+      const now = Math.floor(Date.now() / 1000);
+      let price = symbol.startsWith("USD/JPY") ? 150.0 : 1.1000;
+      const candles = [];
+      for (let i = count; i > 0; i--) {
+        const startTime = now - i * tfSeconds;
+        const open = price;
+        const change = (Math.random() - 0.5) * 0.0010;
+        const close = Math.max(0.0001, open + change);
+        const high = Math.max(open, close) + Math.random() * 0.0003;
+        const low  = Math.min(open, close) - Math.random() * 0.0003;
+        candles.push({ start_time: startTime, open, high, low, close });
+        price = close;
+      }
+      return candles;
+    }
+
+    // ── render candle table ───────────────────────────────────────────────
+    function renderCandles(candles) {
+      const tbody = document.getElementById("candle-table-body");
+      tbody.innerHTML = "";
+      const last10 = candles.slice(-10);
+      last10.forEach((c, idx) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${idx + 1}</td>
+          <td>${c.open.toFixed(5)}</td>
+          <td>${c.high.toFixed(5)}</td>
+          <td>${c.low.toFixed(5)}</td>
+          <td>${c.close.toFixed(5)}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ── analyse ───────────────────────────────────────────────────────────
+    document.getElementById("analyze-btn").addEventListener("click", async () => {
+      showError("");
+      const symbol = document.getElementById("asset-select").value;
+      const tfSeconds = parseInt(document.getElementById("tf-select").value, 10);
+
+      if (!symbol || !tfSeconds) { showError("Please select an asset and timeframe."); return; }
+
+      const candles = buildDemoCandles(symbol, tfSeconds, 50);
+      renderCandles(candles);
+
+      // Update live price display from last candle close
+      const last = candles[candles.length - 1];
+      const priceEl = document.getElementById("live-price");
+      priceEl.textContent = last.close.toFixed(5);
+      priceEl.className = "price-display neutral";
+
+      try {
+        const resp = await fetch(`${API}/api/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol, timeframe_seconds: tfSeconds, candles }),
+        });
+
+        const result = await resp.json();
+
+        if (!resp.ok) {
+          showError("Analysis error: " + (result.detail || JSON.stringify(result)));
+          return;
+        }
+
+        document.getElementById("rsi-val").textContent = result.rsi !== null ? result.rsi.toFixed(2) : "—";
+        document.getElementById("sma-val").textContent = result.sma !== null ? result.sma.toFixed(5) : "—";
+        document.getElementById("candle-count-val").textContent = result.candle_count;
+
+        const dirBox = document.getElementById("direction-box");
+        dirBox.textContent = result.direction;
+        dirBox.className = {
+          UP: "dir-up",
+          DOWN: "dir-down",
+          NEUTRAL: "dir-neutral",
+        }[result.direction] || "dir-neutral";
+
+        // tint live price
+        priceEl.className = "price-display " + (result.direction === "UP" ? "" : result.direction === "DOWN" ? "down" : "neutral");
+
+      } catch (e) {
+        showError("Network error: " + e.message);
+      }
+    });
+
+    // ── init ──────────────────────────────────────────────────────────────
+    Promise.all([loadAssets(), loadStatus()]);
+  </script>
+</body>
+</html>
