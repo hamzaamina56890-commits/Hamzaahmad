@@ -63,10 +63,11 @@
     .price-display {
       font-size: 2.4rem;
       font-weight: 700;
-      color: #68d391;
       font-variant-numeric: tabular-nums;
+      color: #68d391;
     }
 
+    .price-display.up { color: #68d391; }
     .price-display.down { color: #fc8181; }
     .price-display.neutral { color: #e2e8f0; }
 
@@ -295,7 +296,8 @@
         }[result.direction] || "dir-neutral";
 
         // tint live price
-        priceEl.className = "price-display " + (result.direction === "UP" ? "" : result.direction === "DOWN" ? "down" : "neutral");
+        const priceClass = { UP: "up", DOWN: "down", NEUTRAL: "neutral" }[result.direction] || "neutral";
+        priceEl.className = "price-display " + priceClass;
 
       } catch (e) {
         showError("Network error: " + e.message);

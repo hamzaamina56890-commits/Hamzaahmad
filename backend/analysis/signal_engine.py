@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 from backend.market.assets import ASSETS, TIMEFRAMES
-from backend.market.candle_builder import CandleBuilder
 
 # ── constants ────────────────────────────────────────────────────────────────
 RSI_PERIOD = 14
@@ -33,8 +32,9 @@ def _rsi(closes: list[float], period: int = RSI_PERIOD) -> float | None:
     gains: list[float] = []
     losses: list[float] = []
 
+    recent = closes[-(period + 1):]
     for i in range(1, period + 1):
-        delta = closes[i] - closes[i - 1]
+        delta = recent[i] - recent[i - 1]
         if delta > 0:
             gains.append(delta)
             losses.append(0.0)
