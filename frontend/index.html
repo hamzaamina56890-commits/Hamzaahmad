@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Market Analysis</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0e1117; --surface: #161b27; --border: #2a3147;
+      --text: #e2e8f0; --muted: #8896b0; --accent: #3b82f6;
+      --up: #22c55e; --down: #ef4444; --neutral: #f59e0b;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; min-height: 100vh; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    header h1 { font-size: 16px; font-weight: 600; color: var(--accent); letter-spacing: .04em; flex-shrink: 0; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    select, button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; outline: none; transition: border-color .2s; }
+    select:focus, button:focus { border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:disabled { opacity: .5; cursor: not-allowed; }
+    .auto-label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+    .status-bar { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .dot.live { background: var(--up); box-shadow: 0 0 6px var(--up); animation: pulse 2s infinite; }
+    .dot.error { background: var(--down); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    main { display: grid; grid-template-columns: 1fr 320px; gap: 0; height: calc(100vh - 57px); }
+    @media(max-width:860px){ main { grid-template-columns: 1fr; height: auto; } }
+    .chart-section { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+    .price-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: baseline; gap: 10px; }
+    #price-display { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    #price-symbol { font-size: 13px; color: var(--muted); }
+    #price-status { font-size: 12px; color: var(--muted); margin-left: auto; }
+    #chart-canvas { flex: 1; display: block; width: 100%; }
+    #chart-msg { display: none; align-items: center; justify-content: center; flex: 1; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; line-height: 1.6; }
+    .analysis-panel { display: flex; flex-direction: column; gap: 0; overflow-y: auto; background: var(--surface); }
+    .panel-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .panel-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 10px; }
+    .signal-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; font-size: 20px; font-weight: 700; letter-spacing: .06em; background: rgba(255,255,255,.06); border: 2px solid var(--border); width: 100%; justify-content: center; }
+    .signal-badge.UP { border-color: var(--up); color: var(--up); }
+    .signal-badge.DOWN { border-color: var(--down); color: var(--down); }
+    .signal-badge.NEUTRAL { border-color: var(--neutral); color: var(--neutral); }
+    .confidence-row { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .confidence-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .confidence-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .confidence-fill { height: 100%; border-radius: 3px; background: var(--up); transition: width .4s ease; }
+    .kv-list { display: flex; flex-direction: column; gap: 6px; }
+    .kv { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+    .kv .key { color: var(--muted); }
+    .kv .val { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .kv .val.up { color: var(--up); }
+    .kv .val.down { color: var(--down); }
+    .reasons-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+    .reasons-list li { font-size: 12px; color: var(--muted); padding-left: 12px; position: relative; }
+    .reasons-list li::before { content: "\00B7"; position: absolute; left: 0; color: var(--accent); }
+    .disclaimer { padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); margin-top: auto; }
+    #error-banner { display: none; background: rgba(239,68,68,.12); border: 1px solid var(--down); color: var(--down); font-size: 12px; padding: 8px 16px; margin: 8px 16px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Market Analysis</h1>
+    <div class="controls">
+      <select id="asset-select" title="Asset"></select>
+      <select id="tf-select" title="Timeframe"></select>
+      <button class="primary" id="analyze-btn" onclick="runAnalysis()">Analyze</button>
+      <label class="auto-label">
+        <input type="checkbox" id="auto-refresh" />
+        Auto-refresh
+      </label>
+    </div>
+    <div class="status-bar">
+      <div class="dot" id="status-dot"></div>
+      <span id="status-text">Ready</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="chart-section">
+      <div class="price-bar">
+        <span id="price-display">—</span>
+        <span id="price-symbol"></span>
+        <span id="price-status">No data</span>
+      </div>
+      <canvas id="chart-canvas"></canvas>
+      <div id="chart-msg">No candle data available.<br>Set TWELVE_DATA_API_KEY on the server to enable live charts.</div>
+    </section>
+
+    <aside class="analysis-panel">
+      <div id="error-banner"></div>
+
+      <div class="panel-section">
+        <h3>Signal</h3>
+        <div class="signal-badge NEUTRAL" id="signal-badge">
+          <span id="signal-arrow">—</span>
+          <span id="signal-text">NEUTRAL</span>
+        </div>
+        <div class="confidence-row">
+          <div class="confidence-label">
+            <span>Confidence</span><span id="conf-pct">—</span>
+          </div>
+          <div class="confidence-bar"><div class="confidence-fill" id="conf-fill" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Overview</h3>
+        <div class="kv-list">
+          <div class="kv"><span class="key">Trend</span><span class="val" id="kv-trend">—</span></div>
+          <div class="kv"><span class="key">RSI (14)</span><span class="val" id="kv-rsi">—</span></div>
+          <div class="kv"><span class="key">SMA 20</span><span class="val" id="kv-sma20">—</span></div>
+          <div class="kv"><span class="key">SMA 50</span><span class="val" id="kv-sma50">—</span></div>
+          <div class="kv"><span class="key">EMA 9</span><span class="val" id="kv-ema9">—</span></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Levels</h3>
+        <div class="kv-list">
+          <div class="kv"><span class="key">Resistance</span><span class="val up" id="kv-res">—</span></div>
+          <div class="kv"><span class="key">Support</span><span class="val down" id="kv-sup">—</span></div>
+          <div class="kv"><span class="key">Candle strength</span><span class="val" id="kv-str">—</span></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>Reasons</h3>
+        <ul class="reasons-list" id="reasons-list">
+          <li>Run analysis to see signals.</li>
+        </ul>
+      </div>
+
+      <div class="panel-section">
+        <h3>Data</h3>
+        <div class="kv-list">
+          <div class="kv"><span class="key">Source</span><span class="val" id="kv-source">—</span></div>
+          <div class="kv"><span class="key">Verified</span><span class="val" id="kv-live">—</span></div>
+          <div class="kv"><span class="key">Last update</span><span class="val" id="kv-updated">—</span></div>
+        </div>
+      </div>
+
+      <div class="disclaimer">
+        Signals are not financial advice. Past performance does not guarantee future results.
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    var _assets = [], _timeframes = [], _autoTimer = null, _candles = [];
+
+    async function boot() {
+      try {
+        var r = await fetch('/api/assets');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var data = await r.json();
+        _assets = data.assets || [];
+        _timeframes = data.timeframes || [];
+        populateSelects();
+        setStatus('', 'Ready');
+      } catch(e) {
+        setStatus('error', 'Backend unreachable');
+        showError('Failed to load assets: ' + e.message);
+      }
+    }
+
+    function populateSelects() {
+      var asel = document.getElementById('asset-select');
+      asel.innerHTML = '';
+      _assets.forEach(function(a) {
+        var o = document.createElement('option');
+        o.value = a.symbol;
+        o.textContent = a.symbol + ' \u2014 ' + a.name;
+        asel.appendChild(o);
+      });
+      var tsel = document.getElementById('tf-select');
+      tsel.innerHTML = '';
+      _timeframes.forEach(function(tf) {
+        var o = document.createElement('option');
+        o.value = tf.seconds;
+        o.textContent = tf.label;
+        tsel.appendChild(o);
+      });
+      var oneMin = _timeframes.find(function(t){ return t.seconds === 60; });
+      if (oneMin) tsel.value = '60';
+    }
+
+    async function runAnalysis() {
+      var symbol = document.getElementById('asset-select').value;
+      var tf = parseInt(document.getElementById('tf-select').value, 10);
+      if (!symbol || !tf) return;
+      var btn = document.getElementById('analyze-btn');
+      btn.disabled = true;
+      setStatus('', 'Fetching\u2026');
+      hideError();
+      try {
+        var r = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: symbol, timeframe_seconds: tf })
+        });
+        if (!r.ok) {
+          var txt = await r.text();
+          throw new Error('HTTP ' + r.status + ': ' + txt);
+        }
+        var data = await r.json();
+        renderResult(data);
+        setStatus(data.live ? 'live' : '', data.live ? 'Live data' : 'No live data');
+      } catch(e) {
+        setStatus('error', 'Error');
+        showError('Analysis failed: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderResult(d) {
+      if (d.price != null) {
+        document.getElementById('price-display').textContent = d.price.toFixed(5);
+        document.getElementById('price-symbol').textContent = d.symbol;
+        document.getElementById('price-status').textContent = d.live ? '\u25cf live' : '\u25cb not live';
+      } else {
+        document.getElementById('price-display').textContent = '\u2014';
+        document.getElementById('price-symbol').textContent = '';
+        document.getElementById('price-status').textContent = 'Live data unavailable';
+      }
+
+      var badge = document.getElementById('signal-badge');
+      badge.className = 'signal-badge ' + d.signal;
+      document.getElementById('signal-text').textContent = d.signal;
+      var arrows = { UP: '\u25b2', DOWN: '\u25bc', NEUTRAL: '\u2014' };
+      document.getElementById('signal-arrow').textContent = arrows[d.signal] || '\u2014';
+
+      var conf = (d.confidence != null) ? d.confidence : 0;
+      document.getElementById('conf-pct').textContent = conf + '%';
+      var fill = document.getElementById('conf-fill');
+      fill.style.width = conf + '%';
+      fill.style.background = d.signal === 'UP' ? 'var(--up)' : d.signal === 'DOWN' ? 'var(--down)' : 'var(--neutral)';
+
+      var ind = d.indicators || {};
+      setT('kv-trend', d.trend || '\u2014');
+      setT('kv-rsi', ind.rsi != null ? String(ind.rsi) : '\u2014');
+      setT('kv-sma20', ind.sma20 != null ? ind.sma20.toFixed(5) : '\u2014');
+      setT('kv-sma50', ind.sma50 != null ? ind.sma50.toFixed(5) : '\u2014');
+      setT('kv-ema9', ind.ema9 != null ? ind.ema9.toFixed(5) : '\u2014');
+      setT('kv-res', ind.resistance != null ? ind.resistance.toFixed(5) : '\u2014');
+      setT('kv-sup', ind.support != null ? ind.support.toFixed(5) : '\u2014');
+      setT('kv-str', ind.candle_strength || '\u2014');
+      setT('kv-source', d.data_source || '\u2014');
+      setT('kv-live', d.live ? 'Yes' : 'No');
+      setT('kv-updated', new Date().toLocaleTimeString());
+
+      var ul = document.getElementById('reasons-list');
+      ul.innerHTML = '';
+      var reasons = d.reasons || (d.reason ? [d.reason] : ['No reasons available.']);
+      reasons.forEach(function(rr) {
+        var li = document.createElement('li');
+        li.textContent = rr;
+        ul.appendChild(li);
+      });
+
+      _candles = d.candles || [];
+      drawChart(_candles);
+    }
+
+    function setT(id, val) { document.getElementById(id).textContent = val; }
+
+    function drawChart(candles) {
+      var canvas = document.getElementById('chart-canvas');
+      var msg = document.getElementById('chart-msg');
+      if (!candles || candles.length === 0) {
+        canvas.style.display = 'none'; msg.style.display = 'flex'; return;
+      }
+      canvas.style.display = 'block'; msg.style.display = 'none';
+
+      var rect = canvas.parentElement.getBoundingClientRect();
+      var W = Math.floor(rect.width) || 600;
+      var H = Math.floor(rect.height) || 300;
+      canvas.width = W; canvas.height = H;
+
+      var ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, W, H);
+
+      var PAD = { top: 16, right: 72, bottom: 28, left: 8 };
+      var plotW = W - PAD.left - PAD.right;
+      var plotH = H - PAD.top - PAD.bottom;
+
+      var allLow = candles[0].low, allHigh = candles[0].high;
+      candles.forEach(function(c) {
+        if (c.low < allLow) allLow = c.low;
+        if (c.high > allHigh) allHigh = c.high;
+      });
+      var priceRange = allHigh - allLow || 0.0001;
+      var margin = priceRange * 0.06;
+      var yMin = allLow - margin, yMax = allHigh + margin;
+      var yRange = yMax - yMin;
+
+      function toY(p) { return PAD.top + plotH - ((p - yMin) / yRange) * plotH; }
+
+      var n = candles.length;
+      var spacing = plotW / n;
+      var candleW = Math.max(1, Math.floor(spacing * 0.7));
+
+      ctx.strokeStyle = '#1e2535'; ctx.lineWidth = 1;
+      for (var g = 0; g <= 5; g++) {
+        var gy = PAD.top + (plotH / 5) * g;
+        ctx.beginPath(); ctx.moveTo(PAD.left, gy); ctx.lineTo(W - PAD.right, gy); ctx.stroke();
+        var gp = yMax - (yRange / 5) * g;
+        ctx.fillStyle = '#8896b0'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+        ctx.fillText(gp.toFixed(5), W - PAD.right + 4, gy + 3);
+      }
+
+      candles.forEach(function(c, i) {
+        var x = PAD.left + i * spacing + spacing / 2;
+        var bull = c.close >= c.open;
+        ctx.strokeStyle = bull ? '#22c55e' : '#ef4444'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, toY(c.high)); ctx.lineTo(x, toY(c.low)); ctx.stroke();
+        var bodyTop = toY(Math.max(c.open, c.close));
+        var bodyBot = toY(Math.min(c.open, c.close));
+        ctx.fillStyle = bull ? '#22c55e' : '#ef4444';
+        ctx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(bodyBot - bodyTop, 1));
+      });
+
+      ctx.fillStyle = '#8896b0'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+      var lblCount = Math.min(6, n);
+      for (var k = 0; k < lblCount; k++) {
+        var idx = (lblCount === 1) ? 0 : Math.floor((k / (lblCount - 1)) * (n - 1));
+        var cv = candles[idx];
+        if (!cv || !cv.datetime) continue;
+        var lx = PAD.left + idx * spacing + spacing / 2;
+        var lbl = cv.datetime.length > 10 ? cv.datetime.slice(11, 16) : cv.datetime;
+        ctx.fillText(lbl, lx, H - 6);
+      }
+    }
+
+    document.getElementById('auto-refresh').addEventListener('change', function() {
+      clearInterval(_autoTimer);
+      if (this.checked) { _autoTimer = setInterval(runAnalysis, 30000); }
+    });
+
+    window.addEventListener('resize', function() { if (_candles.length > 0) drawChart(_candles); });
+
+    function setStatus(type, text) {
+      var dot = document.getElementById('status-dot');
+      dot.className = 'dot';
+      if (type === 'live') dot.classList.add('live');
+      else if (type === 'error') dot.classList.add('error');
+      document.getElementById('status-text').textContent = text;
+    }
+
+    function showError(msg) {
+      var el = document.getElementById('error-banner');
+      el.textContent = msg; el.style.display = 'block';
+    }
+    function hideError() { document.getElementById('error-banner').style.display = 'none'; }
+
+    boot();
+  </script>
+</body>
+</html>
